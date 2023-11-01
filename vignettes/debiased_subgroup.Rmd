@@ -1,0 +1,166 @@
+---
+title: "An Introduction to `debiased.subgroup`"
+author: "Waverly(Linqing) Wei and Jingshen Wang"
+date: "Jan.2021"
+output: 
+  pdf_document:
+    fig_caption: yes
+    toc: yes
+    toc_depth: 3
+---
+## Introduction
+`debiased.subgroup` is a package that implements two bootstrap-assisted estimators: bootstrap-assisted desparsified Lasso and R-split. The two methods remove the subgroup selection bias and regularization bias indeced by high-dimensional covariates. 
+
+## Installation
+```{r, eval = FALSE,warning=FALSE,message=FALSE}
+devtools::install_github("WaverlyWei/debiased.subgroup")
+```
+
+## Quick start
+First we load the `debiased.subgroup` package:
+```{r, warning=FALSE,message=FALSE}
+library(debiased.subgroup)
+```
+
+We generate high-dimensional data with 2 subgroups of interest. We predefine a set of tuning parameters, denoted as $r$.
+```{r,warning=FALSE,message=FALSE}
+  library(MASS)
+  library(glmnet)
+
+  p <- 200 # number of confounders
+
+  n <- 100 # sample size
+  
+  ngroups <- 2 # number of subgroups/treatments;
+  
+  s0 <- 4
+  
+  m <- ngroups
+    
+  Sigma <- matrix(0,p,p)
+    
+  for (i in 1:n){
+      for(j in 1:p){
+        Sigma[i,j] <- 0.5^(abs(i-j))
+      }
+    }
+    
+    # generate X 
+    X <- mvrnorm( n = n, mu = rep(0,p), Sigma = Sigma )
+    
+    Z <- matrix(0,n,m)
+    
+    for(i in 1:n){
+      for(j in 1:m){
+        Z[i,j] <- rbinom(1,1,exp(X[i,2*j-1] + X[i,2*j])/(1+exp(X[i,2*j-1] + X[i,2*j])))
+      }
+    }
+    
+    
+    # noise: heter/homo
+    noise.y <- 1
+    
+    betas <- 1
+    
+    #index of the subgroups
+    w.index <- seq(1, m, 1) 
+    
+    x <- cbind(Z,X)
+    
+    
+    ## Model: Y = Z * beta + X * gamma + noise
+
+    # Generate coefficients
+    beta <- c(rep(0,m-1),betas) 
+    
+    gamma <- c(rep(1, s0), rep(0, p-s0)) 
+    
+    beta0 <- c(beta, gamma)
+    
+    # Generate noise 
+    noise <- mvrnorm( n = 1, mu = rep(0,n), Sigma = diag(n) * noise.y )
+    
+    # Generate response Y 
+    Y <- 0.5 + x %*% beta0 + noise
+    
+    ## parameters in the function
+    r <- 1/(3*1:10)
+    
+```
+
+## Bootstrap-calibrated Desparsified Lasso
+Bootstrap iterations are recommended to be B = 200. Here we use B = 5 for demonstration purpose. 
+```{r,cache=TRUE,warning=FALSE,message=FALSE}
+desparse_res <- BSDesparseLasso(y = Y,
+                                x = x, 
+                                r = r, 
+                                G = w.index,
+                                B = 5)
+```
+
+
+### Result summary
+The tuning parameter is selected through `cvDesparse`.
+```{r,cache=TRUE,warning=FALSE,message=FALSE}
+desparse_res$LowerBound
+```
+
+```{r,cache=TRUE,warning=FALSE,message=FALSE}
+desparse_res$UpperBound
+```
+
+`betaMax` is the bias-reduced maximum beta estimate.
+```{r,cache=TRUE,warning=FALSE,message=FALSE}
+desparse_res$betaMax
+```
+
+`betaEst` contains the beta estimate for each subgroup.
+```{r,cache=TRUE,warning=FALSE,message=FALSE}
+desparse_res$betaEst
+```
+
+`op` is the cross-validated optimal tuning.
+```{r,cache=TRUE,warning=FALSE,message=FALSE}
+desparse_res$op
+```
+
+
+## Bootstrap-calibrated R-Split
+Bootstrap iterations are recommended to be B = 200, BB = 1000. Here we use B = 5 and BB = 10 as demo. The tuning parameter is selected through `cvSplit`.
+
+```{r,warning=FALSE,message=FALSE}
+rsplit_res <- BSSplitLasso(y = Y,
+                           x = x, 
+                           r = r, 
+                           G = w.index,
+                           B = 5, BB = 10)
+```
+
+### Result summary
+```{r,cache=TRUE,warning=FALSE,message=FALSE}
+rsplit_res$LowerBound
+```
+
+```{r,cache=TRUE,warning=FALSE,message=FALSE}
+rsplit_res$UpperBound
+```
+
+`betaMax` is the bias-reduced maximum beta estimate.
+```{r,cache=TRUE,warning=FALSE,message=FALSE}
+rsplit_res$betaMax
+```
+
+`betaEst` contains the beta estimate for each subgroup.
+```{r,cache=TRUE,warning=FALSE,message=FALSE}
+rsplit_res$betaEst
+```
+
+`modelSize` contains the R-split model size for each bootstrap iteration.
+```{r,cache=TRUE,warning=FALSE,message=FALSE}
+summary(rsplit_res$modelSize)
+```
+
+`op` is the cross-validated optimal tuning paramter
+```{r,cache=TRUE,warning=FALSE,message=FALSE}
+rsplit_res$op
+```
